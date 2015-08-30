@@ -42,25 +42,32 @@
   :handle-ok (fn [_] (format "The text is %s" txt)))
 
 (facts "about defresource"
-       (fact "its simple form should behave as it always has"
+       (fact "its simple form should use unnegotiated plain text as default content type"
              (without-param {:request-method :get})
-             => {:headers {"Content-Type" "text/plain;charset=UTF-8"}, :body "The text is test", :status 200}
+             => {:headers {"Content-Type" "text/plain;charset=UTF-8"}
+                 :body "The text is test" :status 200}
              ((parameter "a test") {:request-method :get})
-             => {:headers {"Vary" "Accept", "Content-Type" "application/xml;charset=UTF-8"}, :body "The text is a test", :status 200})
-       (fact "when provided a standard config, it should add this to the keyword list"
+             => {:headers {"Vary" "Accept", "Content-Type" "application/xml;charset=UTF-8"}
+                 :body "The text is a test" :status 200})
+       (fact "when provided a standard config it should add this to the keyword list"
              (with-options {:request-method :get})
-             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}, :body "The text is this", :status 200}
+             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}
+                 :body "The text is this" :status 200}
              ((with-options-and-params "something") {:request-method :get})
-             => {:headers {"Vary" "Accept", "Content-Type" "application/xml;charset=UTF-8"}, :body "The text is something", :status 200})
+             => {:headers {"Vary" "Accept", "Content-Type" "application/xml;charset=UTF-8"}
+                 :body "The text is something" :status 200})
        (fact "it should also work with a function providing the standard config"
              ((with-options-parametrized-config "application/json" "a poem") {:request-method :get})
-             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}, :body "The text is a poem", :status 200})
+             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}
+                 :body "The text is a poem" :status 200})
        (fact "it should work with only a standard config"
              (with-options-only {:request-method :get})
-             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}, :body "OK", :status 200})
+             => {:headers {"Vary" "Accept", "Content-Type" "application/json;charset=UTF-8"}
+                 :body "OK" :status 200})
        (fact "should allow multi methods as handlers"
              (with-multimethod {:request-method :get})
-             => {:headers {"Content-Type" "text/plain;charset=UTF-8"}, :body "with-multimethod", :status 200}))
+             => {:headers {"Content-Type" "text/plain;charset=UTF-8"}
+                 :body "with-multimethod" :status 200}))
 
 
 (def fn-with-options

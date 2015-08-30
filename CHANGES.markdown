@@ -4,6 +4,10 @@
 
 * Values can be added to the context at the beginning of the execution
   flow using the :initialize-context action.
+* Refactoring of content negotiation, get rid of internal decision points
+  :accept-exists?, :accept-language-exists?, :accept-encoding-exists?,
+  :accept-charset-exists? Empty Accept-* headers are treatened as
+  absent.
 
 # New in 0.13
 

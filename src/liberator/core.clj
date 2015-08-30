@@ -8,10 +8,10 @@
   (:import (javax.xml.ws ProtocolException)))
 
 (defmulti coll-validator
-  "Return a function that evaluaties if the give argument 
-             a) is contained in a collection 
+  "Return a function that evaluaties if the give argument
+             a) is contained in a collection
              b) equals an argument
-             c) when applied to a function evaluates as true" 
+             c) when applied to a function evaluates as true"
   (fn [x] (cond
           (coll? x) :col
           (fn? x) :fn)))
@@ -23,10 +23,10 @@
 (defmethod coll-validator :default [x]
   (partial = x))
 
-(defn console-logger [category values] 
+(defn console-logger [category values]
   #(apply println "LOG " category " " values))
 
-(def ^:dynamic *loggers* nil) 
+(def ^:dynamic *loggers* nil)
 
 (defmacro with-logger [logger & body]
   `(binding [*loggers* (conj (or *loggers* []) ~logger)]
@@ -48,6 +48,7 @@
 
 (defn map-values [f m]
   (persistent! (reduce-kv (fn [out-m k v] (assoc! out-m k (f v))) (transient {}) m)))
+
 
 (defn request-method-in [& methods]
   #(some #{(:request-method (:request %))} methods))
@@ -93,7 +94,7 @@
   `(defn ~name [~'context]
      (decide ~(keyword name) ~test ~then ~else ~'context)))
 
-(defmacro defdecision 
+(defmacro defdecision
   ([name then else]
      (defdecision* name nil then else))
   ([name test then else]
@@ -281,14 +282,14 @@
 
 (defhandler handle-precondition-failed 412 "Precondition failed.")
 
-(defdecision if-match-star-exists-for-missing? 
+(defdecision if-match-star-exists-for-missing?
   if-match-star
   handle-precondition-failed
   method-put?)
 
 (defhandler handle-not-modified 304 nil)
 
-(defdecision if-none-match? 
+(defdecision if-none-match?
   #(#{ :head :get} (get-in % [:request :request-method]))
   handle-not-modified
   handle-precondition-failed)
@@ -296,7 +297,7 @@
 (defdecision put-to-existing? (partial =method :put)
   conflict? multiple-representations?)
 
-(defdecision post-to-existing? (partial =method :post) 
+(defdecision post-to-existing? (partial =method :post)
   post! put-to-existing?)
 
 (defhandler handle-accepted 202 "Accepted")
@@ -321,7 +322,7 @@
   handle-not-modified)
 
 (defdecision if-modified-since-valid-date?
-  (fn [context] 
+  (fn [context]
     (if-let [date (parse-http-date (get-in context [:request :headers "if-modified-since"]))]
       {::if-modified-since-date date}))
   modified-since?
@@ -340,7 +341,7 @@
   if-none-match?
   if-modified-since-exists?)
 
-(defdecision if-none-match-star? 
+(defdecision if-none-match-star?
   #(= "*" (get-in % [:request :headers "if-none-match"]))
   if-none-match?
   etag-matches-for-if-none?)
@@ -359,7 +360,7 @@
   if-none-match-exists?)
 
 (defdecision  if-unmodified-since-valid-date?
-  (fn [context]   
+  (fn [context]
     (when-let [date (parse-http-date (get-in context [:request :headers "if-unmodified-since"]))]
       {::if-unmodified-since-date date}))
   unmodified-since?
@@ -376,7 +377,7 @@
   if-unmodified-since-exists?
   handle-precondition-failed)
 
-(defdecision if-match-star? 
+(defdecision if-match-star?
   if-match-star if-unmodified-since-exists? etag-matches-for-if-match?)
 
 (defdecision if-match-exists? (partial header-exists? "if-match")
@@ -389,79 +390,65 @@
 
 (defhandler handle-not-acceptable 406 "No acceptable resource available.")
 
-(defdecision encoding-available? 
-  (fn [ctx]
-    (when-let [encoding (conneg/best-allowed-encoding
-                         (get-in ctx [:request :headers "accept-encoding"])
-                         ((get-in ctx [:resource :available-encodings]) ctx))]
-      {:representation {:encoding encoding}}))
-
-  processable? handle-not-acceptable)
-
 (defmacro try-header [header & body]
   `(try ~@body
         (catch ProtocolException e#
           (throw (ProtocolException.
                   (format "Malformed %s header" ~header) e#)))))
 
-(defdecision accept-encoding-exists? (partial header-exists? "accept-encoding")
-  encoding-available? processable?)
+(defn- negotiate-encoding [{:keys [request resource] :as context}]
+  (try-header "Accept-Encoding"
+              (let [accept (get-in request [:headers "accept-encoding"])]
+                (or (empty? accept)
+                    (when-let [encoding (conneg/best-allowed-encoding
+                                         accept
+                                         ((:available-encodings resource) context))]
+                      {:representation {:encoding encoding}})))) )
 
-(defdecision charset-available?
-  #(try-header "Accept-Charset"
-               (when-let [charset (conneg/best-allowed-charset
-                                   (get-in % [:request :headers "accept-charset"])
-                                   ((get-in context [:resource :available-charsets]) context))]
-                 (if (= charset "*")
-                   true
-                   {:representation {:charset charset}})))
-  accept-encoding-exists? handle-not-acceptable)
+(defdecision encoding-available? negotiate-encoding
+  processable? handle-not-acceptable)
 
-(defdecision accept-charset-exists? (partial header-exists? "accept-charset")
-  charset-available? accept-encoding-exists?)
+(defn- negotiate-charset [{:keys [request resource] :as context}]
+  (try-header "Accept-Charset"
+              (let [accept (get-in request [:headers "accept-charset"])]
+                (or (empty? accept)
+                    (when-let [charset (conneg/best-allowed-charset
+                                        accept
+                                        ((get resource :available-charsets) context))]
+                      {:representation {:charset charset}})))))
 
+(defdecision charset-available? negotiate-charset
+  encoding-available? handle-not-acceptable)
 
-(defdecision language-available?
-  #(try-header "Accept-Language"
-               (when-let [lang (conneg/best-allowed-language
-                                (get-in % [:request :headers "accept-language"]) 
-                                ((get-in context [:resource :available-languages]) context))]
-                 (if (= lang "*")
-                   true
-                   {:representation {:language lang}})))
-  accept-charset-exists? handle-not-acceptable)
+(defn negotiate-language [{:keys [request resource] :as context}]
+  (try-header "Accept-Language"
+              (let [accept (get-in request [:headers "accept-language"])]
+                (if-let [lang (conneg/best-allowed-language
+                               (if-not (empty? accept) accept "*" )
+                               ((get resource :available-languages) context))]
+                  (or (= "*" lang) {:representation {:language lang}})
+                  (empty? accept)))))
 
-(defdecision accept-language-exists? (partial header-exists? "accept-language")
-  language-available? accept-charset-exists?)
+(defdecision language-available? negotiate-language
+  charset-available? handle-not-acceptable)
 
-(defn negotiate-media-type [context]
+(defn negotiate-media-type [{:keys [request resource] :as context}]
   (try-header "Accept"
-              (when-let [type (conneg/best-allowed-content-type 
-                               (get-in context [:request :headers "accept"]) 
-                               ((get-in context [:resource :available-media-types] (constantly "text/html")) context))]
-                {:representation {:media-type (conneg/stringify type)}})))
+              (let [accept (get-in request [:headers "accept"])]
+                (if-let [type (conneg/best-allowed-content-type
+                               (if-not (empty? accept) accept "*/*")
+                               ((get resource :available-media-types) context))]
+                  {:representation {:media-type (conneg/stringify type)}}
+                  ;; if there's no accept headers and we cannot negotiate a
+                  ;; media type then continue
+                  (empty? accept)))))
 
 (defdecision media-type-available? negotiate-media-type
-  accept-language-exists? handle-not-acceptable)
-
-(defdecision accept-exists?
-  #(if (header-exists? "accept" %)
-     true
-     ;; "If no Accept header field is present, then it is assumed that the
-     ;; client accepts all media types" [p100]
-     ;; in this case we do content-type negotiation using */* as the accept
-     ;; specification
-     (if-let [type (liberator.conneg/best-allowed-content-type 
-                    "*/*"
-                    ((get-in context [:resource :available-media-types]) context))]
-       [false {:representation {:media-type (liberator.conneg/stringify type)}}]
-       false))
-  media-type-available?
-  accept-language-exists?)
+  language-available? handle-not-acceptable)
 
 (defhandler handle-options 200 nil)
 
-(defdecision is-options? #(= :options (:request-method (:request %))) handle-options accept-exists?)
+(defdecision is-options? #(= :options (:request-method (:request %))) handle-options media-type-available?)
 
 (defhandler handle-request-entity-too-large 413 "Request entity too large.")
 (defdecision valid-entity-length? is-options? handle-request-entity-too-large)
@@ -521,8 +508,6 @@
    :method-allowed?           (test-request-method :allowed-methods)
 
    :malformed?                false
-   ;;      :encoding-available?       true
-   ;;      :charset-available?        true
    :authorized?               true
    :allowed?                  true
    :valid-content-header?     true
@@ -582,7 +567,7 @@
     (initialize-context {:request request
                          :resource (map-values make-function (merge default-functions kvs))
                          :representation {}})
-    
+
     (catch ProtocolException e         ; this indicates a client error
       {:status 400
        :headers {"Content-Type" "text/plain"}
@@ -622,4 +607,3 @@
                :delete \"Entity was deleted successfully.\"})"
   [map]
   (fn [ctx] ((make-function (get map (get-in ctx [:request :request-method]) ctx)) ctx)))
-
