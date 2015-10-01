@@ -4,6 +4,8 @@
              [Representation as-response ring-response]]
             [liberator.util :refer
              [as-date http-date parse-http-date combine make-function]]
+            [liberator.parse :refer
+             [parse-request-entity]]
             [clojure.string :refer [join upper-case]])
   (:import (javax.xml.ws ProtocolException)))
 
@@ -543,7 +545,7 @@
    :moved-permanently?        false
    :moved-temporarily?        false
    :delete-enacted?           true
-   :processable?              true
+   :processable?              parse-request-entity
 
    ;; Handlers
    :handle-ok                 "OK"
